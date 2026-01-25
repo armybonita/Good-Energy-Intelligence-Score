@@ -1,0 +1,7 @@
+{
+  "name": "GOOD ENERGY INTELLIGENCE SCORE (GEIS)",
+  "description": "Metabolic Health KPI Analysis and 3D Vitality Dashboard powered by Gemini.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
