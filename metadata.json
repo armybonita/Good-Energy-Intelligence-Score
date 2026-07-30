@@ -1,7 +1,5 @@
 {
-  "name": "GOOD ENERGY INTELLIGENCE SCORE (GEIS)",
-  "description": "Metabolic Health KPI Analysis and 3D Vitality Dashboard powered by Gemini.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "name": "BODY Q™ — The Intelligence of Your Body",
+  "description": "A public, browser-first research experience connecting My Body IQ™ with the explainable Good Energy Intelligence Score™.",
+  "requestFramePermissions": []
 }
