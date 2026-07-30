@@ -1,233 +1,580 @@
+import React, { useMemo, useState } from 'react';
+import { calculateGeis } from './algorithm/index.ts';
+import type { DomainScores, GeisDomain } from './algorithm/types.ts';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { GoogleGenAI, Chat, FunctionDeclaration, Type } from "@google/genai";
-import { ChatMessage, MessageAuthor } from './types';
-import Header from './components/Header';
-import ChatMessageComponent from './components/ChatMessage';
-import ChatInput from './components/ChatInput';
-import GesScore from './components/GesScore';
-import ExerciseSummary from './components/ExerciseSummary';
-import MindSummary from './components/MindSummary';
-import SleepSummary from './components/SleepSummary';
-import CoachingInsights from './components/CoachingInsights';
-import PersonalGoals, { Goal } from './components/PersonalGoals';
-import RegistrationModal, { UserProfile } from './components/RegistrationModal';
-import EnergyTrendChart from './components/EnergyTrendChart';
-
-export interface GesScoreData {
-  timestamp: number;
-  overall: number;
-  breakdown: { [key: string]: number };
-}
-
-// Define the overall shape of the user data state
-interface UserDataState {
-  profile: UserProfile | null;
-  ges: GesScoreData;
-  gesHistory: GesScoreData[];
-  data: {
-    exercise: { type: string; durationMinutes: number }[];
-    mind: { type: string; durationMinutes: number }[];
-    sleep: { date: string; durationHours: number }[];
-    goals: Goal[];
-  };
-  aiCoach: {
-    insights: string[];
-  };
-}
-
-// Ensure initialUserData conforms to UserDataState
-const initialUserData: UserDataState = {
-  profile: null,
-  ges: {
-    timestamp: Date.now(), // Add initial timestamp to conform to GesScoreData
-    overall: 82,
-    breakdown: { biomarker: 85, exercise: 78, mind: 88, sleep: 75, food: 84 } as { [key: string]: number } // Explicitly type breakdown
+const domainMeta: Array<{
+  key: GeisDomain;
+  label: string;
+  weight: string;
+  color: string;
+  short: string;
+}> = [
+  {
+    key: 'biomarkers',
+    label: 'Biomarkers',
+    weight: '25%',
+    color: '#006b7a',
+    short: 'Blood, glucose & recovery signals',
   },
-  gesHistory: [], // Initialize as empty array, type is already GesScoreData[]
-  data: {
-    exercise: [{ type: "Morning Run", durationMinutes: 30 }],
-    mind: [{ type: "Zen Meditation", durationMinutes: 15 }],
-    sleep: [{ date: "Last Night", durationHours: 7.2 }],
-    goals: [
-      { id: "g1", title: "Metabolic Peak", category: "biomarker", currentValue: 75, targetValue: 100, unit: "pts" },
-      { id: "g2", title: "Sleep Recovery", category: "sleep", currentValue: 6, targetValue: 8, unit: "hrs" }
-    ], // No need for 'as Goal[]' here if initialUserData is typed
+  {
+    key: 'nutrition',
+    label: 'Nutrition',
+    weight: '20%',
+    color: '#17a78b',
+    short: 'Meal quality & metabolic stability',
   },
-  aiCoach: {
-    insights: ["시스템 등록이 완료되었습니다. 분석 준비 중..."]
-  }
-};
+  {
+    key: 'exercise',
+    label: 'Exercise',
+    weight: '20%',
+    color: '#0b6fd3',
+    short: 'Movement, capacity & consistency',
+  },
+  {
+    key: 'mind',
+    label: 'Mind',
+    weight: '20%',
+    color: '#7a5cff',
+    short: 'Stress load, mood & mental recovery',
+  },
+  {
+    key: 'sleep',
+    label: 'Sleep',
+    weight: '15%',
+    color: '#233b73',
+    short: 'Duration, regularity & restoration',
+  },
+];
 
-const analyzeHealthKpisFunction: FunctionDeclaration = {
-  name: 'analyzeHealthKpis',
-  description: '사용자의 건강 데이터를 분석하여 각 카테고리별 z-score(0.0~1.0)를 바탕으로 최종 점수를 산출합니다.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      hrv: { type: Type.NUMBER }, rhr: { type: Type.NUMBER }, glucoseVar: { type: Type.NUMBER }, biomarkerStress: { type: Type.NUMBER },
-      tir: { type: Type.NUMBER }, ppSpike: { type: Type.NUMBER }, mealReg: { type: Type.NUMBER }, macroBal: { type: Type.NUMBER },
-      mvpa: { type: Type.NUMBER }, steps: { type: Type.NUMBER }, fitness: { type: Type.NUMBER }, recovery: { type: Type.NUMBER },
-      sleepDur: { type: Type.NUMBER }, sleepEff: { type: Type.NUMBER }, sleepReg: { type: Type.NUMBER }, deepRem: { type: Type.NUMBER },
-      mindRecovery: { type: Type.NUMBER }, mindStress: { type: Type.NUMBER }, hrvMind: { type: Type.NUMBER }, mood: { type: Type.NUMBER },
-      insights: { type: Type.ARRAY, items: { type: Type.STRING } }
-    }
-  }
-};
+const intelligenceCards = [
+  {
+    label: 'Good Energy',
+    value: 83,
+    detail: 'Daily capacity to generate and use energy',
+  },
+  {
+    label: 'Metabolic',
+    value: 72,
+    detail: 'Glucose stability, body composition and GLP-1 context',
+  },
+  {
+    label: 'Recovery',
+    value: 67,
+    detail: 'Sleep, stress and post-activity restoration',
+  },
+  {
+    label: 'Longevity',
+    value: 79,
+    detail: 'Long-horizon resilience and healthy-age signals',
+  },
+];
 
-const App: React.FC = () => {
-  // Use UserDataState for the useState hook
-  const [userData, setUserData] = useState<UserDataState>(initialUserData);
-  const [messages, setMessages] = useState<ChatMessage[]>([{ 
-    author: MessageAuthor.MODEL, 
-    content: "GOOD ENERGY INTELLIGENCE 시스템 가동. 신체 프로필을 등록해 주세요." 
-  }]);
-  const [isLoading, setIsLoading] = useState(false);
-  const chatRef = useRef<Chat | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+const connectors = [
+  {
+    id: 'checkup',
+    title: 'Health Checkup',
+    detail: 'CSV, TXT, PDF or image',
+    accept: '.csv,.txt,.pdf,image/*',
+    icon: '01',
+  },
+  {
+    id: 'genome',
+    title: 'Genome',
+    detail: 'Variant CSV or TXT',
+    accept: '.csv,.txt',
+    icon: '02',
+  },
+  {
+    id: 'meal',
+    title: 'Meal Photo',
+    detail: 'JPG, PNG or HEIC',
+    accept: 'image/*',
+    icon: '03',
+  },
+  {
+    id: 'wearable',
+    title: 'Wearables',
+    detail: 'Ring, watch or activity export',
+    accept: '.csv,.txt,.json',
+    icon: '04',
+  },
+];
 
-  const initChat = useCallback((profile: UserProfile) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-    chatRef.current = ai.chats.create({
-      model: 'gemini-3-flash-preview',
-      config: {
-        systemInstruction: `당신은 'GOOD ENERGY INTELLIGENCE' 엔진입니다. 
-        사용자 정보: 이름 ${profile.name}, 나이 ${profile.age}세, 성별 ${profile.gender}, 신장 ${profile.height}cm, 체중 ${profile.weight}kg.
-        이 신체적 특성과 현재까지의 GEIS 스코어 트렌드를 고려하여 HRV, 혈당, 수면 데이터를 분석하고, 
-        과거 데이터와의 비교를 통해 장기적인 건강 인사이트와 목표 달성 전략을 제시하십시오.
-        사용자에게 조언할 때는 항상 전문적이고 데이터 기반의 톤을 유지하십시오.
-        분석 시 'analyzeHealthKpis' 도구를 적극 활용하십시오.`,
-        tools: [{ functionDeclarations: [analyzeHealthKpisFunction] }],
-      },
-    });
-  }, []);
-
-  const handleRegister = (profile: UserProfile) => {
-    setUserData(prev => ({ ...prev, profile }));
-    initChat(profile);
-    setMessages(prev => [...prev, { author: MessageAuthor.MODEL, content: `${profile.name}님, 시스템 등록이 완료되었습니다. 오늘 어떤 건강 데이터를 분석해 드릴까요?` }]);
-  };
-
-  const handleAddGoal = (newGoal: Omit<Goal, 'id'>) => {
-    const goalWithId: Goal = { ...newGoal, id: `g${Date.now()}` };
-    setUserData(prev => ({
-      ...prev,
-      data: { ...prev.data, goals: [...prev.data.goals, goalWithId] }
-    }));
-  };
-
-  const calculateScientificScores = useCallback((args: any) => {
-    const safeNum = (val: any, def: number) => {
-      const n = Number(val);
-      return isNaN(n) ? def : n;
-    };
-
-    const b = 100 * (0.30 * safeNum(args.hrv, 0.8) + 0.20 * safeNum(args.rhr, 0.9) + 0.30 * safeNum(args.glucoseVar, 0.85) + 0.20 * safeNum(args.biomarkerStress, 0.75));
-    const n = 100 * (0.35 * safeNum(args.tir, 0.8) + 0.35 * safeNum(args.ppSpike, 0.7) + 0.15 * safeNum(args.mealReg, 0.9) + 0.15 * safeNum(args.macroBal, 0.85));
-    const e = 100 * (0.30 * safeNum(args.mvpa, 0.7) + 0.20 * safeNum(args.steps, 0.8) + 0.25 * safeNum(args.fitness, 0.75) + 0.25 * safeNum(args.recovery, 0.85));
-    const s = 100 * (0.25 * safeNum(args.sleepDur, 0.8) + 0.25 * safeNum(args.sleepEff, 0.85) + 0.30 * safeNum(args.sleepReg, 0.7) + 0.20 * safeNum(args.deepRem, 0.65));
-    const m = 100 * (0.35 * safeNum(args.mindRecovery, 0.9) + 0.30 * safeNum(args.mindStress, 0.8) + 0.20 * safeNum(args.hrvMind, 0.85) + 0.15 * safeNum(args.mood, 0.9));
-    
-    const overall = (b + n + e + s + m) / 5;
-
-    const newGes: GesScoreData = {
-      timestamp: Date.now(),
-      overall: Math.round(overall),
-      breakdown: {
-        biomarker: Math.round(b),
-        food: Math.round(n),
-        exercise: Math.round(e),
-        sleep: Math.round(s),
-        mind: Math.round(m),
-      } as { [key: string]: number } // Explicitly cast to match GesScoreData's breakdown
-    };
-
-    setUserData(prev => ({
-      ...prev,
-      ges: newGes, // `newGes` is now correctly typed as GesScoreData
-      gesHistory: [...prev.gesHistory, newGes], // 히스토리에 추가
-      aiCoach: { insights: args.insights || prev.aiCoach.insights }
-    }));
-    return { success: true, message: "Dashboard updated." };
-  }, []);
-
-  const onSendMessage = async (text: string, image?: { data: string; mimeType: string }) => {
-    if (!chatRef.current || isLoading) return;
-    setIsLoading(true);
-    setMessages(prev => [...prev, { author: MessageAuthor.USER, content: text, image: image ? `data:${image.mimeType};base64,${image.data}` : undefined }]);
-
-    try {
-      const parts: any[] = [];
-      if (image) parts.push({ inlineData: image });
-      parts.push({ text: text || "데이터 분석해줘." });
-
-      const response = await chatRef.current.sendMessage({ message: parts });
-      
-      if (response.functionCalls?.length) {
-        for (const fc of response.functionCalls) {
-          if (fc.name === 'analyzeHealthKpis') {
-            const result = calculateScientificScores(fc.args);
-            const stream = await chatRef.current.sendMessageStream({ 
-              message: [{ functionResponse: { id: fc.id, name: fc.name, response: { result: result.message } } }] 
-            });
-
-            let modelText = '';
-            setMessages(prev => [...prev, { author: MessageAuthor.MODEL, content: '' }]);
-            for await (const chunk of stream) {
-              modelText += (chunk as any).text || '';
-              setMessages(prev => { 
-                const next = [...prev]; 
-                next[next.length-1].content = modelText; 
-                return next; 
-              });
-            }
-          }
-        }
-      } else {
-        setMessages(prev => [...prev, { author: MessageAuthor.MODEL, content: response.text || "분석 완료." }]);
-      }
-    } catch (e) {
-      console.error("Analysis error:", e);
-      setMessages(prev => [...prev, { author: MessageAuthor.MODEL, content: "오류가 발생했습니다." }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
+function BodyQMark() {
   return (
-    <div className="flex flex-col h-screen bg-[#020617] text-slate-100 overflow-hidden">
-      <Header profile={userData.profile} />
-      
-      {!userData.profile && <RegistrationModal onRegister={handleRegister} />}
-
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden perspective-2000">
-        <div className="flex-1 overflow-y-auto p-6 md:p-12 scroll-smooth bg-black/20">
-          <div className="max-w-5xl mx-auto space-y-12 pb-24">
-            <GesScore ges={userData.ges} />
-            <CoachingInsights insights={userData.aiCoach.insights} />
-            <PersonalGoals goals={userData.data.goals} onAddGoal={handleAddGoal} />
-            <EnergyTrendChart gesHistory={userData.gesHistory} profile={userData.profile} /> {/* New Chart Component */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <ExerciseSummary exercises={userData.data.exercise} />
-              <MindSummary activities={userData.data.mind} />
-              <SleepSummary logs={userData.data.sleep} />
-            </div>
-          </div>
-        </div>
-        <aside className="w-full md:w-[400px] bg-slate-900/40 border-l border-white/5 backdrop-blur-3xl flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.5)] z-20">
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {messages.map((m, i) => <ChatMessageComponent key={i} message={m} />)}
-            <div ref={chatEndRef} />
-          </div>
-          <ChatInput onSendMessage={onSendMessage} isLoading={isLoading} />
-        </aside>
-      </main>
+    <div className="brand-lockup" aria-label="BODY Q">
+      <svg
+        className="brand-mark"
+        viewBox="0 0 64 64"
+        role="img"
+        aria-label="BODY Q symbol"
+      >
+        <defs>
+          <linearGradient id="bodyQGradient" x1="12" y1="8" x2="52" y2="56">
+            <stop stopColor="#0ec7d8" />
+            <stop offset="1" stopColor="#0b6fd3" />
+          </linearGradient>
+        </defs>
+        <circle cx="32" cy="32" r="29" fill="#071b33" />
+        <circle
+          cx="32"
+          cy="32"
+          r="20"
+          fill="none"
+          stroke="url(#bodyQGradient)"
+          strokeWidth="3"
+          strokeDasharray="96 30"
+          strokeLinecap="round"
+          transform="rotate(-28 32 32)"
+        />
+        <circle cx="32" cy="21" r="5" fill="#e8fbff" />
+        <path
+          d="M23 45c1.5-9 4.8-14 9-14s7.5 5 9 14"
+          fill="none"
+          stroke="#e8fbff"
+          strokeWidth="4"
+          strokeLinecap="round"
+        />
+        <path
+          d="M45 42l7 7"
+          stroke="#0ec7d8"
+          strokeWidth="4"
+          strokeLinecap="round"
+        />
+      </svg>
+      <div>
+        <strong>BODY Q</strong>
+        <span>The Intelligence of Your Body</span>
+      </div>
     </div>
   );
-};
+}
+
+function getBodyState(score: number) {
+  if (score >= 85) {
+    return {
+      label: 'Thriving',
+      copy: 'Protect the routines that are working and watch for early drift.',
+    };
+  }
+  if (score >= 70) {
+    return {
+      label: 'Building',
+      copy: 'Your system is responding. One focused lever can improve balance.',
+    };
+  }
+  if (score >= 55) {
+    return {
+      label: 'Rebalancing',
+      copy: 'Reduce volatility and rebuild a stable daily rhythm.',
+    };
+  }
+  return {
+    label: 'Restoring',
+    copy: 'Start with recovery, data quality and appropriate professional support.',
+  };
+}
+
+function App() {
+  const [dialScore, setDialScore] = useState(76);
+  const [scores, setScores] = useState<DomainScores>({
+    biomarkers: 82,
+    nutrition: 74,
+    exercise: 79,
+    mind: 71,
+    sleep: 66,
+  });
+  const [selectedFiles, setSelectedFiles] = useState<Record<string, string>>({});
+  const [glp1Mode, setGlp1Mode] = useState(false);
+
+  const geis = useMemo(
+    () =>
+      calculateGeis({
+        scores,
+        confidence: {
+          biomarkers: selectedFiles.checkup ? 1 : 0.65,
+          nutrition: selectedFiles.meal ? 0.9 : 0.55,
+          exercise: selectedFiles.wearable ? 0.95 : 0.65,
+          mind: 0.65,
+          sleep: selectedFiles.wearable ? 0.95 : 0.6,
+        },
+        genomicContext: {
+          available: Boolean(selectedFiles.genome),
+          source: selectedFiles.genome ? 'user-selected-file' : undefined,
+        },
+      }),
+    [scores, selectedFiles],
+  );
+
+  const state = getBodyState(dialScore);
+  const suggestedLever =
+    geis.bottleneck === 'sleep'
+      ? 'Move bedtime 30 minutes earlier for the next seven days.'
+      : geis.bottleneck === 'nutrition'
+        ? 'Anchor one meal with protein, vegetables and a consistent time.'
+        : geis.bottleneck === 'mind'
+          ? 'Add a ten-minute decompression block before your evening routine.'
+          : geis.bottleneck === 'exercise'
+            ? 'Add a short post-meal walk to your most sedentary day.'
+            : 'Review your latest checkup signals before changing multiple habits.';
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const updateScore = (domain: GeisDomain, value: number) => {
+    setScores((current) => ({ ...current, [domain]: value }));
+  };
+
+  const handleFile = (
+    id: string,
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setSelectedFiles((current) => ({ ...current, [id]: file.name }));
+  };
+
+  return (
+    <div className="site-shell">
+      <header className="site-header">
+        <a className="brand-link" href="#top">
+          <BodyQMark />
+        </a>
+        <nav aria-label="Primary navigation">
+          <a href="#system">The System</a>
+          <a href="#intelligence">Intelligence Lab</a>
+          <a href="#connect">Connect Data</a>
+          <a href="#trust">Trust</a>
+        </nav>
+        <button className="header-cta" onClick={() => scrollTo('intelligence')}>
+          Try the Dial
+        </button>
+      </header>
+
+      <main id="top">
+        <section className="hero section-pad">
+          <div className="hero-copy">
+            <p className="eyebrow">
+              Human Energy Intelligence · Research Preview
+            </p>
+            <h1>
+              Know your body.
+              <span> Change your future.</span>
+            </h1>
+            <p className="hero-lede">
+              BODY Q™ turns fragmented health signals into a clear body state,
+              an explainable score and one action you can use today.
+            </p>
+            <div className="hero-actions">
+              <button className="primary-button" onClick={() => scrollTo('intelligence')}>
+                Experience BODY Q
+              </button>
+              <button className="text-button" onClick={() => scrollTo('system')}>
+                See how the system works
+                <span aria-hidden="true">→</span>
+              </button>
+            </div>
+            <div className="hero-proof">
+              <span>Browser-first</span>
+              <span>Explainable scoring</span>
+              <span>One actionable lever</span>
+            </div>
+          </div>
+
+          <div className="dial-stage" aria-label="Interactive Body State Dial">
+            <div
+              className="score-orbit"
+              style={{
+                background: `conic-gradient(#0ec7d8 ${dialScore * 3.6}deg, #dfeaf0 0deg)`,
+              }}
+            >
+              <div className="score-orbit-inner">
+                <span className="dial-kicker">BODY STATE</span>
+                <strong>{dialScore}</strong>
+                <span className="dial-state">{state.label}</span>
+              </div>
+            </div>
+            <p className="dial-copy">{state.copy}</p>
+            <label className="dial-control">
+              <span>Move the dial</span>
+              <input
+                type="range"
+                min="35"
+                max="96"
+                value={dialScore}
+                onChange={(event) => setDialScore(Number(event.target.value))}
+              />
+            </label>
+            <div className="one-lever">
+              <span>YOUR ONE LEVER</span>
+              <strong>{suggestedLever}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="system" className="system-section section-pad">
+          <div className="section-heading">
+            <p className="eyebrow">One system · Three clear layers</p>
+            <h2>From body signals to better decisions.</h2>
+            <p>
+              The brand, intelligence architecture and energy engine each have
+              one job—so the experience stays understandable.
+            </p>
+          </div>
+          <div className="layer-grid">
+            <article className="layer-card layer-card-primary">
+              <span>01 · EXPERIENCE</span>
+              <h3>BODY Q™</h3>
+              <p>
+                The user-facing experience: body state, meaning and a practical
+                next action.
+              </p>
+            </article>
+            <article className="layer-card">
+              <span>02 · ARCHITECTURE</span>
+              <h3>My Body IQ™</h3>
+              <p>
+                The personal-health intelligence layer combining energy,
+                metabolism, recovery and longevity.
+              </p>
+            </article>
+            <article className="layer-card">
+              <span>03 · CORE ENGINE</span>
+              <h3>GEIS</h3>
+              <p>
+                The explainable energy sub-index that rewards strength while
+                accounting for imbalance.
+              </p>
+            </article>
+          </div>
+
+          <div className="iq-grid">
+            {intelligenceCards.map((card) => (
+              <article className="iq-card" key={card.label}>
+                <div className="iq-value">
+                  <span>{card.value}</span>
+                  <small>/100</small>
+                </div>
+                <h3>{card.label} IQ</h3>
+                <p>{card.detail}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="intelligence" className="intelligence-section section-pad">
+          <div className="lab-copy">
+            <p className="eyebrow eyebrow-light">BODY Q™ Intelligence Lab</p>
+            <h2>Balance over peaks.</h2>
+            <p>
+              Adjust the five domains. BODY Q recalculates the weighted base,
+              balance penalty and final GEIS in real time.
+            </p>
+            <div className="formula-card">
+              <span>FINAL GEIS</span>
+              <strong>
+                Weighted Base Score
+                <br />
+                − Balance Penalty
+              </strong>
+              <small>Algorithm {geis.algorithmVersion}</small>
+            </div>
+          </div>
+
+          <div className="lab-panel">
+            <div className="lab-result">
+              <div>
+                <span>GOOD ENERGY INTELLIGENCE SCORE</span>
+                <strong>{Math.round(geis.finalGeis)}</strong>
+              </div>
+              <div className="result-tag">
+                {getBodyState(Math.round(geis.finalGeis)).label}
+              </div>
+            </div>
+
+            <div className="domain-controls">
+              {domainMeta.map((domain) => (
+                <label className="domain-row" key={domain.key}>
+                  <div className="domain-label">
+                    <span
+                      className="domain-dot"
+                      style={{ backgroundColor: domain.color }}
+                    />
+                    <span>
+                      <strong>{domain.label}</strong>
+                      <small>{domain.short}</small>
+                    </span>
+                    <em>{domain.weight}</em>
+                    <b>{scores[domain.key]}</b>
+                  </div>
+                  <input
+                    type="range"
+                    min="30"
+                    max="100"
+                    value={scores[domain.key]}
+                    style={{ accentColor: domain.color }}
+                    onChange={(event) =>
+                      updateScore(domain.key, Number(event.target.value))
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+
+            <div className="calculation-strip">
+              <div>
+                <span>Weighted base</span>
+                <strong>{geis.weightedBaseScore.toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Balance penalty</span>
+                <strong>−{geis.balancePenalty.toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Data confidence</span>
+                <strong>{Math.round(geis.dataConfidence * 100)}%</strong>
+              </div>
+              <div>
+                <span>Priority domain</span>
+                <strong className="capitalize">{geis.bottleneck}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="connect" className="connect-section section-pad">
+          <div className="section-heading">
+            <p className="eyebrow">Start with the data you already have</p>
+            <h2>Connect your health story.</h2>
+            <p>
+              A public prototype for exploring the experience. Selected files
+              remain in your browser and are not uploaded to a server.
+            </p>
+          </div>
+
+          <div className="connector-grid">
+            {connectors.map((connector) => (
+              <label
+                className={`connector-card ${
+                  selectedFiles[connector.id] ? 'is-connected' : ''
+                }`}
+                key={connector.id}
+              >
+                <input
+                  type="file"
+                  accept={connector.accept}
+                  onChange={(event) => handleFile(connector.id, event)}
+                />
+                <span className="connector-number">{connector.icon}</span>
+                <h3>{connector.title}</h3>
+                <p>{selectedFiles[connector.id] || connector.detail}</p>
+                <strong>
+                  {selectedFiles[connector.id] ? 'Selected locally ✓' : 'Choose a file'}
+                </strong>
+              </label>
+            ))}
+          </div>
+
+          <div className="glp1-panel">
+            <div>
+              <p className="eyebrow eyebrow-light">Phase 1 beachhead</p>
+              <h2>GLP-1 Care that understands change over time.</h2>
+              <p>
+                Bring medication context together with appetite, weight,
+                composition, nutrition, activity and recovery—without turning
+                one data point into a diagnosis.
+              </p>
+            </div>
+            <div className="glp1-toggle">
+              <span>Personalization mode</span>
+              <button
+                className={glp1Mode ? 'is-on' : ''}
+                onClick={() => setGlp1Mode((current) => !current)}
+                aria-pressed={glp1Mode}
+              >
+                <span />
+              </button>
+              <strong>{glp1Mode ? 'GLP-1 context on' : 'General mode'}</strong>
+            </div>
+            <div className="glp1-actions">
+              <span>MONITOR</span>
+              <span>GUIDE</span>
+              <span>ESCALATE</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="loop-section section-pad">
+          <div className="section-heading">
+            <p className="eyebrow">The BODY Q loop</p>
+            <h2>Intelligence becomes useful when it closes the loop.</h2>
+          </div>
+          <div className="loop-grid">
+            {[
+              ['Measure', 'Bring signals into one body state.'],
+              ['Explain', 'Show what changed and why it matters.'],
+              ['Act', 'Choose one lever with the highest practical value.'],
+              ['Learn', 'Compare response with your personal baseline.'],
+            ].map(([title, copy], index) => (
+              <article key={title}>
+                <span>0{index + 1}</span>
+                <h3>{title}</h3>
+                <p>{copy}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="trust" className="trust-section section-pad">
+          <div className="trust-copy">
+            <p className="eyebrow">Designed for trust</p>
+            <h2>Your body is not a black box—or a marketing score.</h2>
+          </div>
+          <div className="trust-grid">
+            <article>
+              <strong>Browser-first</strong>
+              <p>Public demo selections stay on the device by default.</p>
+            </article>
+            <article>
+              <strong>Explainable</strong>
+              <p>Weights, penalty, confidence and version remain visible.</p>
+            </article>
+            <article>
+              <strong>Genomics with restraint</strong>
+              <p>
+                Genomic context informs personalization, not direct score
+                rewards or penalties.
+              </p>
+            </article>
+            <article>
+              <strong>Human oversight</strong>
+              <p>
+                Escalation and professional review remain part of responsible
+                care.
+              </p>
+            </article>
+          </div>
+          <div className="medical-notice">
+            BODY Q™ is a research prototype for health and lifestyle support.
+            It is not a diagnosis, prescription or clinically validated medical
+            score. Seek qualified medical care for symptoms, medication
+            decisions or urgent concerns.
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <BodyQMark />
+        <p>
+          BODY Q™ · My Body IQ™ · Good Energy Intelligence Score™
+          <br />
+          Copyright © 2026 Ahreum Hong. All rights reserved.
+        </p>
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </div>
+  );
+}
 
 export default App;
