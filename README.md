@@ -1,21 +1,65 @@
-<div align="center">
+# BODY Q™ — The Intelligence of Your Body
 
-<img width="661" height="376" alt="Screenshot 2026-07-09 at 11 36 59 AM" src="https://github.com/user-attachments/assets/bb43f8d6-d415-4d09-b995-92ef3a5d3733" />
+Public research prototype connecting the BODY Q™ experience, the My Body IQ™
+personal-health intelligence architecture, and the Good Energy Intelligence
+Score™ (GEIS).
 
- <img width="677" height="645" alt="Screenshot 2026-07-09 at 11 37 44 AM" src="https://github.com/user-attachments/assets/6ddc64a3-9d14-48ed-8e64-921298381093" />
+## Brand and product hierarchy
 
- 
-</div>
+1. **BODY Q™** — the user-facing experience: body state, explanation and one
+   actionable lever.
+2. **My Body IQ™** — the broader intelligence architecture: Good Energy,
+   Metabolic, Recovery and Longevity IQ.
+3. **GEIS** — the core energy engine using five weighted domains and a balance
+   penalty.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1-GKb-jIJsXv4ouEMjA-PQm0w9xSLKNHu
+## Public homepage experience
 
-## Run Locally
+- Interactive Body State Dial
+- Live GEIS laboratory with adjustable five-domain inputs
+- Health checkup, genome, meal-photo and wearable file selection
+- GLP-1 personalization mode
+- Measure → Explain → Act → Learn loop
+- Browser-first privacy and responsible-use boundaries
+- Responsive navy–cyan precision-health design
 
-**Prerequisites:**  Node.js
+The public file selectors record only the selected filename in browser memory.
+They do not upload, parse or persist health data.
 
+## GEIS algorithm v1
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```text
+Weighted Base Score
+  = 0.25 × Biomarkers
+  + 0.20 × Nutrition
+  + 0.20 × Exercise
+  + 0.20 × Mind
+  + 0.15 × Sleep
+
+Final GEIS
+  = Weighted Base Score − 0.15 × Population Standard Deviation
+```
+
+Configuration is versioned in
+[`algorithm/config.ts`](algorithm/config.ts). Full assumptions and updating
+instructions are in [`docs/ALGORITHM.md`](docs/ALGORITHM.md).
+
+Genomic context may support personalization and confidence. It is not directly
+added to or subtracted from the GEIS total.
+
+## Run locally
+
+Prerequisite: Node.js 22 or later.
+
+```bash
+npm install
+npm run check
+npm run dev
+```
+
+## Research boundary
+
+BODY Q™ is for health and lifestyle support research. It is not a medical
+diagnosis, prescription or clinically validated medical score.
+
+Copyright © 2026 Ahreum Hong. All rights reserved. See [`NOTICE`](NOTICE).
