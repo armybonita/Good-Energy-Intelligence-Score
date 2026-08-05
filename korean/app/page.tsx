@@ -46,10 +46,10 @@ const deviceSources: Array<{ key: DeviceKey; name: string; signals: string; prot
   { key: "ble", name: "연구용 BLE 센서", signals: "심박수 · 체온 · 움직임", protocol: "BLE GATT" },
 ];
 
-const evidenceTypes: Array<{ key: EvidenceKind; label: string; eyebrow: string; description: string; domain: DomainKey; accept: string }> = [
-  { key: "meal", label: "식사 사진", eyebrow: "영양", description: "식사 사진을 올리고 식사의 균형을 확인한 뒤 영양 영역에 반영합니다.", domain: "nutrition", accept: "image/*" },
-  { key: "checkup", label: "건강검진표", eyebrow: "생체지표", description: "건강검진 이미지·PDF·표를 추가하고 검토한 생체지표 점수를 확정합니다.", domain: "biomarkers", accept: "image/*,.pdf,.csv,.txt" },
-  { key: "exercise", label: "운동 기록", eyebrow: "운동", description: "러닝머신·러닝·활동 기록 사진을 올리고 오늘의 운동을 반영합니다.", domain: "exercise", accept: "image/*,.pdf,.csv,.txt" },
+const evidenceTypes: Array<{ key: EvidenceKind; label: string; eyebrow: string; icon: string; hint: string; domain: DomainKey; accept: string }> = [
+  { key: "meal", label: "식사", eyebrow: "영양", icon: "🍽️", hint: "사진", domain: "nutrition", accept: "image/*" },
+  { key: "checkup", label: "건강검진", eyebrow: "생체지표", icon: "🧾", hint: "사진 · PDF · CSV", domain: "biomarkers", accept: "image/*,.pdf,.csv,.txt" },
+  { key: "exercise", label: "운동", eyebrow: "운동", icon: "🏃", hint: "러닝머신 · 러닝 · 활동", domain: "exercise", accept: "image/*,.pdf,.csv,.txt" },
 ];
 
 const actionLibrary: Record<DomainKey, { action: string; reason: string; metric: string }> = {
@@ -176,6 +176,7 @@ export default function Home() {
   const activeDevices = deviceSources.filter((device) => connectedDevices[device.key]);
   const activeEvidenceType = evidenceTypes.find((item) => item.key === evidenceKind) ?? evidenceTypes[0];
   const projectedEvidenceScore = Math.round(scores[activeEvidenceType.domain] * 0.65 + evidenceScore * 0.35);
+  const activeEvidenceDomain = domains.find((domain) => domain.key === activeEvidenceType.domain)?.label ?? "영역";
 
   const apiExamples = useMemo(() => {
     const domainScores = Object.fromEntries(domains.map((domain) => [domain.key, scores[domain.key]]));
@@ -320,20 +321,17 @@ export default function Home() {
           <span>BODY Q <em>리서치</em></span>
         </a>
         <nav aria-label="주요 메뉴">
-          <a href="#method">산출방법</a>
-          <a href="#evidence">내 데이터</a>
-          <a href="#lab">GEIS 랩</a>
-          <a href="#transition">전환상태</a>
+          <a href="#evidence">데이터 추가</a>
+          <a href="#lab">나의 GEIS</a>
           <a href="#devices">웨어러블</a>
-          <a href="#architecture">기술구조</a>
-          <a href="#api">API</a>
+          <a href="#architecture">연구정보</a>
         </nav>
         <div className="topbar-actions">
           <div className="language-switch" aria-label="언어 선택">
             <a href="https://body-q-geis-engine.army78.chatgpt.site">EN</a><span aria-current="page">한국어</span>
           </div>
-          <button className="nav-cta" onClick={() => document.getElementById("lab")?.scrollIntoView({ behavior: "smooth" })}>
-            GEIS 랩 열기
+          <button className="nav-cta" onClick={() => document.getElementById("evidence")?.scrollIntoView({ behavior: "smooth" })}>
+            데이터 추가
           </button>
         </div>
       </header>
@@ -341,27 +339,23 @@ export default function Home() {
       <section className="hero" id="top">
         <div className="hero-copy">
           <div className="eyebrow"><span /> Good Energy Intelligence Score</div>
-          <h1>균형을 측정하고.<br />전환을 감지하고.<br /><strong>다음 행동을 안내합니다.</strong></h1>
-          <p>
-            GEIS는 다섯 가지 건강영역의 성과를 정량화하면서 영역 간 불균형을 명시적으로
-            패널티에 반영하는 연구 엔진입니다. 다중모달 관측값을 비교 가능한 상태,
-            조기 전환신호, 그리고 검증 가능한 단 하나의 다음 행동으로 변환합니다.
-          </p>
+          <h1>나의 데이터.<br /><strong>단 하나의 다음 행동.</strong></h1>
+          <p>식사·건강검진·운동 기록을 올리면 GEIS가 변화를 보여주고 다음 행동을 안내합니다.</p>
           <div className="hero-actions">
-            <button className="primary-button" onClick={() => document.getElementById("lab")?.scrollIntoView({ behavior: "smooth" })}>
-              실시간 엔진 체험하기 <span>↘</span>
+            <button className="primary-button" onClick={() => document.getElementById("evidence")?.scrollIntoView({ behavior: "smooth" })}>
+              오늘의 데이터 추가 <span>↘</span>
             </button>
-            <a className="text-link" href="#architecture">기술모델 보기 →</a>
+            <a className="text-link" href="#lab">나의 GEIS 보기 →</a>
           </div>
           <div className="hero-meta">
-            <span><b>5</b> 건강영역</span>
-            <span><b>1</b> 불균형 패널티</span>
-            <span><b>1</b> 최적 행동</span>
+            <span><b>1</b> 데이터 추가</span>
+            <span><b>2</b> 점수 확인</span>
+            <span><b>3</b> 한 가지 행동</span>
           </div>
         </div>
 
         <div className="hero-instrument" aria-label={`현재 예시 GEIS ${metrics.geis.toFixed(0)}`}>
-          <div className="instrument-label">실시간 연구신호</div>
+          <div className="instrument-label">나의 GEIS</div>
           <div className="gauge" style={{ "--score": `${metrics.geis * 3.6}deg` } as React.CSSProperties}>
             <div className="gauge-inner">
               <span>GEIS</span>
@@ -376,43 +370,34 @@ export default function Home() {
           </div>
           <div className="instrument-note">
             <span className={`state-dot ${metrics.state.toLowerCase().replace(" ", "-")}`} />
-            연구 입력값이 바뀌면 즉시 다시 계산됩니다.
+            나의 데이터로 바로 갱신됩니다.
           </div>
         </div>
       </section>
 
       <section className="method-section" id="method">
-        <div className="section-heading light-heading">
-          <span>01 / 산출방법</span>
-          <h2>보이지 않던 불균형을 점수로 드러냅니다.</h2>
-          <p>높은 평균점수도 취약한 시스템을 가릴 수 있습니다. GEIS는 수준과 균형을 함께 측정합니다.</p>
-        </div>
-        <div className="formula-panel">
-          <div className="formula-copy">
-            <span className="formula-kicker">핵심 수식</span>
-            <div className="formula">GEIS(t) = Σ w<sub>d</sub>S<sub>d,t</sub> − λB(t)</div>
-            <p>
-              가중 기본점수는 생체지표·영양·운동·마음·수면의 성과를 반영합니다.
-              패널티 항은 다섯 영역 사이의 편차를 반영합니다.
-            </p>
+        <details className="method-disclosure">
+          <summary><span>GEIS는 어떻게 계산되나요?</span><b>수식 보기 ＋</b></summary>
+          <div className="formula-panel">
+            <div className="formula-copy"><span className="formula-kicker">균형 조정 점수</span><div className="formula">GEIS = 가중 점수 − 불균형</div></div>
+            <div className="formula-steps compact-formula-steps">
+              <div><span>1</span><p>다섯 건강영역을 합산합니다.</p></div>
+              <div><span>2</span><p>불균형 패널티를 차감합니다.</p></div>
+            </div>
           </div>
-          <div className="formula-steps">
-            <div><span>1</span><p>영역신호를 0–100의 비교 가능한 척도로 <b>표준화</b>합니다.</p></div>
-            <div><span>2</span><p>연구설정에 따라 각 영역에 <b>가중치</b>를 적용합니다.</p></div>
-            <div><span>3</span><p>영역 간 표준편차에 λ를 곱해 <b>패널티</b>를 적용합니다.</p></div>
-            <div><span>4</span><p>건강점수·상태 불확실성·데이터 신뢰도를 <b>분리</b>합니다.</p></div>
-          </div>
-        </div>
+        </details>
       </section>
 
       <section className="evidence-section" id="evidence">
-        <div className="section-heading"><span>02 / 개인 다중모달 데이터 입력</span><h2>오늘의 자료를 올리면 GEIS가 달라집니다.</h2><p>식사 사진·건강검진표·러닝머신 기록 사진을 올리세요. 해석된 영역값을 직접 확인한 뒤 GEIS에 반영할 수 있습니다.</p></div>
-        <div className="evidence-type-row" role="tablist" aria-label="자료 유형">{evidenceTypes.map((item) => <button key={item.key} role="tab" aria-selected={evidenceKind === item.key} onClick={() => selectEvidenceKind(item.key)}><span>{item.eyebrow}</span><strong>{item.label}</strong></button>)}</div>
-        <div className="evidence-workspace">
-          <div className="upload-card"><div className="upload-card-head"><div><span>1단계</span><h3>파일 선택</h3></div><b>로컬 미리보기</b></div><label className={evidenceFile ? "drop-zone has-file" : "drop-zone"}><input type="file" accept={activeEvidenceType.accept} onChange={handleEvidenceFile} />{evidenceFile?.preview ? <Image src={evidenceFile.preview} alt={`${evidenceFile.name} 미리보기`} width={72} height={72} unoptimized /> : <div className="upload-symbol">＋</div>}<div><strong>{evidenceFile?.name ?? `${activeEvidenceType.label} 업로드`}</strong><p>{evidenceFile ? `${(evidenceFile.size / 1024).toFixed(1)} KB · ${evidenceFile.type}` : activeEvidenceType.description}</p></div><span className="browse-pill">파일 선택</span></label><p className="privacy-line">파일은 현재 브라우저 세션에서만 사용됩니다. 공개 사이트에 저장되거나 의료 진단을 위해 전송되지 않습니다.</p></div>
-          <div className="review-card"><div className="upload-card-head"><div><span>2단계</span><h3>반영 전 확인</h3></div><b>{activeEvidenceType.eyebrow}</b></div><div className="review-score"><div><label htmlFor="evidence-score">확인된 근거 점수</label><p>업로드한 자료를 확인한 뒤 0–100 값을 설정하세요.</p></div><output htmlFor="evidence-score">{evidenceScore}</output></div><input id="evidence-score" type="range" min="0" max="100" value={evidenceScore} onChange={(event) => setEvidenceScore(Number(event.target.value))} /><label className="evidence-note"><span>선택 메모</span><textarea value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder={evidenceKind === "exercise" ? "예: 러닝머신 42분, 5.1km, 중강도" : evidenceKind === "meal" ? "예: 단백질·채소·통곡물 식사" : "예: 최근 정기 건강검진 결과 확인"} /></label><div className="impact-preview"><div><span>현재 {activeEvidenceType.eyebrow}</span><b>{scores[activeEvidenceType.domain]}</b></div><i>→</i><div><span>자료 반영 후</span><b>{projectedEvidenceScore}</b></div></div><button className="apply-evidence" disabled={!evidenceFile} onClick={applyEvidence}>GEIS에 반영하고 다시 계산</button></div>
+        <div className="section-heading friendly-heading"><span>나의 데이터 추가</span><h2>무엇을 추가할까요?</h2></div>
+        <div className="evidence-type-row" role="tablist" aria-label="자료 유형">{evidenceTypes.map((item) => <button key={item.key} role="tab" aria-selected={evidenceKind === item.key} onClick={() => selectEvidenceKind(item.key)}><i>{item.icon}</i><strong>{item.label}</strong><small>{item.hint}</small></button>)}</div>
+        <div className="simple-evidence-card">
+          <label className={evidenceFile ? "quick-upload has-file" : "quick-upload"}><input type="file" accept={activeEvidenceType.accept} onChange={handleEvidenceFile} />{evidenceFile?.preview ? <Image src={evidenceFile.preview} alt={`${evidenceFile.name} 미리보기`} width={96} height={96} unoptimized /> : <span className="quick-upload-icon">{activeEvidenceType.icon}</span>}<div><strong>{evidenceFile?.name ?? `${activeEvidenceType.label} 자료 올리기`}</strong><small>{evidenceFile ? `${(evidenceFile.size / 1024).toFixed(0)} KB` : activeEvidenceType.hint}</small></div><b>{evidenceFile ? "변경" : "선택"}</b></label>
+          <div className="quick-review"><div className="quick-score-title"><label htmlFor="evidence-score">오늘은 어땠나요?</label><output htmlFor="evidence-score">{evidenceScore}</output></div><input id="evidence-score" type="range" min="0" max="100" value={evidenceScore} onChange={(event) => setEvidenceScore(Number(event.target.value))} /><div className="quick-impact"><span>{activeEvidenceDomain}</span><strong>{scores[activeEvidenceType.domain]} <i>→</i> {projectedEvidenceScore}</strong></div><button className="apply-evidence" disabled={!evidenceFile} onClick={applyEvidence}>나의 GEIS 업데이트</button></div>
+          <details className="quick-note"><summary>메모 추가</summary><textarea value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder="선택사항" /></details>
+          <p className="privacy-line">🔒 이 브라우저에서만 사용되며 공개 저장되지 않습니다.</p>
         </div>
-        <div className="evidence-log" aria-live="polite"><div className="evidence-log-head"><div><span>3단계</span><h3>엔진에 반영된 근거자료</h3></div><b>{evidenceLog.length}건 반영</b></div>{evidenceLog.length === 0 ? <div className="empty-evidence">아직 반영된 개인 자료가 없습니다. 오늘의 러닝머신 기록부터 올려보세요.</div> : <div className="evidence-records">{evidenceLog.map((record) => <article key={record.id}><span>{record.label}</span><div><strong>{record.fileName}</strong><p>{record.note}</p></div><div className="record-change"><small>{record.previousScore}</small><i>→</i><b>{record.appliedScore}</b></div><time>{record.createdAt}</time></article>)}</div>}</div>
+        {evidenceLog[0] && <div className="evidence-success" aria-live="polite"><span>✓</span><div><strong>GEIS에 반영했습니다</strong><p>{evidenceLog[0].fileName} · {evidenceLog[0].previousScore} → {evidenceLog[0].appliedScore}</p></div><b>GEIS {metrics.geis.toFixed(1)}</b></div>}
       </section>
 
       <section className="lab-section" id="lab">
