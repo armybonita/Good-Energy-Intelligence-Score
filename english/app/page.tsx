@@ -50,10 +50,10 @@ const deviceSources: Array<{ key: DeviceKey; name: string; signals: string; prot
   { key: "ble", name: "Research BLE Sensor", signals: "heart rate · temperature · motion", protocol: "BLE GATT" },
 ];
 
-const evidenceTypes: Array<{ key: EvidenceKind; label: string; eyebrow: string; description: string; domain: DomainKey; accept: string }> = [
-  { key: "meal", label: "Meal photo", eyebrow: "NUTRITION", description: "Upload a meal image, review its balance and apply it to the Nutrition domain.", domain: "nutrition", accept: "image/*" },
-  { key: "checkup", label: "Health checkup", eyebrow: "BIOMARKERS", description: "Add a checkup image, PDF or table and confirm the reviewed Biomarkers score.", domain: "biomarkers", accept: "image/*,.pdf,.csv,.txt" },
-  { key: "exercise", label: "Exercise record", eyebrow: "EXERCISE", description: "Upload a treadmill, running or activity record and reflect today’s session.", domain: "exercise", accept: "image/*,.pdf,.csv,.txt" },
+const evidenceTypes: Array<{ key: EvidenceKind; label: string; eyebrow: string; icon: string; hint: string; domain: DomainKey; accept: string }> = [
+  { key: "meal", label: "Meal", eyebrow: "NUTRITION", icon: "🍽️", hint: "Photo", domain: "nutrition", accept: "image/*" },
+  { key: "checkup", label: "Checkup", eyebrow: "BIOMARKERS", icon: "🧾", hint: "Photo · PDF · CSV", domain: "biomarkers", accept: "image/*,.pdf,.csv,.txt" },
+  { key: "exercise", label: "Workout", eyebrow: "EXERCISE", icon: "🏃", hint: "Treadmill · Run · Activity", domain: "exercise", accept: "image/*,.pdf,.csv,.txt" },
 ];
 
 const actionLibrary: Record<DomainKey, { action: string; reason: string; metric: string }> = {
@@ -178,6 +178,7 @@ export default function Home() {
   const activeDevices = deviceSources.filter((device) => connectedDevices[device.key]);
   const activeEvidenceType = evidenceTypes.find((item) => item.key === evidenceKind) ?? evidenceTypes[0];
   const projectedEvidenceScore = Math.round(scores[activeEvidenceType.domain] * 0.65 + evidenceScore * 0.35);
+  const activeEvidenceDomain = domains.find((domain) => domain.key === activeEvidenceType.domain)?.label ?? "Domain";
 
   const apiExamples = useMemo(() => {
     const domainScores = Object.fromEntries(domains.map((domain) => [domain.key, scores[domain.key]]));
@@ -341,20 +342,17 @@ export default function Home() {
           <span>BODY Q <em>Research</em></span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="#method">Method</a>
-          <a href="#evidence">My Data</a>
-          <a href="#lab">GEIS Lab</a>
-          <a href="#transition">Transition</a>
+          <a href="#evidence">Add data</a>
+          <a href="#lab">My GEIS</a>
           <a href="#devices">Wearables</a>
-          <a href="#architecture">Architecture</a>
-          <a href="#api">API</a>
+          <a href="#architecture">Research</a>
         </nav>
         <div className="topbar-actions">
           <div className="language-switch" aria-label="Language selection">
             <span aria-current="page">EN</span><a href="https://body-q-geis-engine-kr.army78.chatgpt.site">한국어</a>
           </div>
-          <button className="nav-cta" onClick={() => document.getElementById("lab")?.scrollIntoView({ behavior: "smooth" })}>
-            Open the lab
+          <button className="nav-cta" onClick={() => document.getElementById("evidence")?.scrollIntoView({ behavior: "smooth" })}>
+            Add data
           </button>
         </div>
       </header>
@@ -362,27 +360,23 @@ export default function Home() {
       <section className="hero" id="top">
         <div className="hero-copy">
           <div className="eyebrow"><span /> Good Energy Intelligence Score</div>
-          <h1>Measure balance.<br />Detect transition.<br /><strong>Guide the next move.</strong></h1>
-          <p>
-            GEIS is a research engine for quantifying five-domain health performance while
-            explicitly penalising cross-domain imbalance. It turns multimodal observations into
-            a comparable state, an early transition signal and one testable next action.
-          </p>
+          <h1>Your data.<br /><strong>One clear next step.</strong></h1>
+          <p>Upload a meal, checkup or workout. GEIS shows what changed and what to do next.</p>
           <div className="hero-actions">
-            <button className="primary-button" onClick={() => document.getElementById("lab")?.scrollIntoView({ behavior: "smooth" })}>
-              Explore the live engine <span>↘</span>
+            <button className="primary-button" onClick={() => document.getElementById("evidence")?.scrollIntoView({ behavior: "smooth" })}>
+              Add today’s data <span>↘</span>
             </button>
-            <a className="text-link" href="#architecture">View technical model →</a>
+            <a className="text-link" href="#lab">See my GEIS →</a>
           </div>
           <div className="hero-meta">
-            <span><b>5</b> health domains</span>
-            <span><b>1</b> imbalance penalty</span>
-            <span><b>1</b> next best action</span>
+            <span><b>1</b> Add data</span>
+            <span><b>2</b> See your score</span>
+            <span><b>3</b> Take one action</span>
           </div>
         </div>
 
         <div className="hero-instrument" aria-label={`Current example GEIS ${metrics.geis.toFixed(0)}`}>
-          <div className="instrument-label">LIVE RESEARCH SIGNAL</div>
+          <div className="instrument-label">YOUR GEIS</div>
           <div className="gauge" style={{ "--score": `${metrics.geis * 3.6}deg` } as React.CSSProperties}>
             <div className="gauge-inner">
               <span>GEIS</span>
@@ -397,68 +391,52 @@ export default function Home() {
           </div>
           <div className="instrument-note">
             <span className={`state-dot ${metrics.state.toLowerCase().replace(" ", "-")}`} />
-            Recalculates as the live research inputs change.
+            Updates with your data.
           </div>
         </div>
       </section>
 
       <section className="method-section" id="method">
-        <div className="section-heading light-heading">
-          <span>01 / THE METHOD</span>
-          <h2>A score that makes imbalance visible.</h2>
-          <p>A high average can conceal a fragile system. GEIS measures both level and balance.</p>
-        </div>
-        <div className="formula-panel">
-          <div className="formula-copy">
-            <span className="formula-kicker">CORE EQUATION</span>
-            <div className="formula">GEIS(t) = Σ w<sub>d</sub>S<sub>d,t</sub> − λB(t)</div>
-            <p>
-              The weighted base captures performance across biomarkers, nutrition, exercise,
-              mind and sleep. The penalty term captures dispersion between those domains.
-            </p>
+        <details className="method-disclosure">
+          <summary><span>How GEIS works</span><b>View formula ＋</b></summary>
+          <div className="formula-panel">
+            <div className="formula-copy">
+              <span className="formula-kicker">BALANCE-ADJUSTED SCORE</span>
+              <div className="formula">GEIS = weighted score − imbalance</div>
+            </div>
+            <div className="formula-steps compact-formula-steps">
+              <div><span>1</span><p>Combine five health domains.</p></div>
+              <div><span>2</span><p>Subtract the imbalance penalty.</p></div>
+            </div>
           </div>
-          <div className="formula-steps">
-            <div><span>1</span><p><b>Standardise</b> domain signals to a 0–100 comparable scale.</p></div>
-            <div><span>2</span><p><b>Weight</b> each domain by its research configuration.</p></div>
-            <div><span>3</span><p><b>Penalise</b> cross-domain standard deviation by λ.</p></div>
-            <div><span>4</span><p><b>Separate</b> score, state uncertainty and data confidence.</p></div>
-          </div>
-        </div>
+        </details>
       </section>
 
       <section className="evidence-section" id="evidence">
-        <div className="section-heading">
-          <span>02 / PERSONAL MULTIMODAL INPUT</span>
-          <h2>Upload today’s evidence. See it change the model.</h2>
-          <p>Add a meal photo, health-check record or treadmill screenshot. Review the interpreted domain value before it is blended into GEIS.</p>
+        <div className="section-heading friendly-heading">
+          <span>ADD MY DATA</span>
+          <h2>What would you like to add?</h2>
         </div>
         <div className="evidence-type-row" role="tablist" aria-label="Evidence type">
-          {evidenceTypes.map((item) => <button key={item.key} role="tab" aria-selected={evidenceKind === item.key} onClick={() => selectEvidenceKind(item.key)}><span>{item.eyebrow}</span><strong>{item.label}</strong></button>)}
+          {evidenceTypes.map((item) => <button key={item.key} role="tab" aria-selected={evidenceKind === item.key} onClick={() => selectEvidenceKind(item.key)}><i>{item.icon}</i><strong>{item.label}</strong><small>{item.hint}</small></button>)}
         </div>
-        <div className="evidence-workspace">
-          <div className="upload-card">
-            <div className="upload-card-head"><div><span>STEP 1</span><h3>Select your file</h3></div><b>Local preview</b></div>
-            <label className={evidenceFile ? "drop-zone has-file" : "drop-zone"}>
+        <div className="simple-evidence-card">
+          <label className={evidenceFile ? "quick-upload has-file" : "quick-upload"}>
               <input type="file" accept={activeEvidenceType.accept} onChange={handleEvidenceFile} />
-              {evidenceFile?.preview ? <Image src={evidenceFile.preview} alt={`Preview of ${evidenceFile.name}`} width={72} height={72} unoptimized /> : <div className="upload-symbol">＋</div>}
-              <div><strong>{evidenceFile?.name ?? `Upload ${activeEvidenceType.label.toLowerCase()}`}</strong><p>{evidenceFile ? `${(evidenceFile.size / 1024).toFixed(1)} KB · ${evidenceFile.type}` : activeEvidenceType.description}</p></div>
-              <span className="browse-pill">Choose file</span>
-            </label>
-            <p className="privacy-line">The file stays in this browser session. It is not saved to the public site or sent for medical diagnosis.</p>
-          </div>
-          <div className="review-card">
-            <div className="upload-card-head"><div><span>STEP 2</span><h3>Review before applying</h3></div><b>{activeEvidenceType.eyebrow}</b></div>
-            <div className="review-score"><div><label htmlFor="evidence-score">Confirmed evidence score</label><p>Set the 0–100 value after reviewing the uploaded record.</p></div><output htmlFor="evidence-score">{evidenceScore}</output></div>
+              {evidenceFile?.preview ? <Image src={evidenceFile.preview} alt={`Preview of ${evidenceFile.name}`} width={96} height={96} unoptimized /> : <span className="quick-upload-icon">{activeEvidenceType.icon}</span>}
+              <div><strong>{evidenceFile?.name ?? `Upload ${activeEvidenceType.label.toLowerCase()}`}</strong><small>{evidenceFile ? `${(evidenceFile.size / 1024).toFixed(0)} KB` : activeEvidenceType.hint}</small></div>
+              <b>{evidenceFile ? "Change" : "Choose"}</b>
+          </label>
+          <div className="quick-review">
+            <div className="quick-score-title"><label htmlFor="evidence-score">How was it?</label><output htmlFor="evidence-score">{evidenceScore}</output></div>
             <input id="evidence-score" type="range" min="0" max="100" value={evidenceScore} onChange={(event) => setEvidenceScore(Number(event.target.value))} />
-            <label className="evidence-note"><span>Optional note</span><textarea value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder={evidenceKind === "exercise" ? "e.g. Treadmill 42 min, 5.1 km, moderate effort" : evidenceKind === "meal" ? "e.g. Protein, vegetables and whole grains" : "e.g. Reviewed with the latest annual checkup"} /></label>
-            <div className="impact-preview"><div><span>Current {activeEvidenceType.eyebrow}</span><b>{scores[activeEvidenceType.domain]}</b></div><i>→</i><div><span>After evidence</span><b>{projectedEvidenceScore}</b></div></div>
-            <button className="apply-evidence" disabled={!evidenceFile} onClick={applyEvidence}>Apply to GEIS and recalculate</button>
+            <div className="quick-impact"><span>{activeEvidenceDomain}</span><strong>{scores[activeEvidenceType.domain]} <i>→</i> {projectedEvidenceScore}</strong></div>
+            <button className="apply-evidence" disabled={!evidenceFile} onClick={applyEvidence}>Update my GEIS</button>
           </div>
+          <details className="quick-note"><summary>Add a note</summary><textarea value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder="Optional" /></details>
+          <p className="privacy-line">🔒 Stays in this browser. Not saved publicly.</p>
         </div>
-        <div className="evidence-log" aria-live="polite">
-          <div className="evidence-log-head"><div><span>STEP 3</span><h3>Evidence reflected in the engine</h3></div><b>{evidenceLog.length} applied</b></div>
-          {evidenceLog.length === 0 ? <div className="empty-evidence">No personal evidence has been applied yet. Upload today’s treadmill record to start.</div> : <div className="evidence-records">{evidenceLog.map((record) => <article key={record.id}><span>{record.label}</span><div><strong>{record.fileName}</strong><p>{record.note}</p></div><div className="record-change"><small>{record.previousScore}</small><i>→</i><b>{record.appliedScore}</b></div><time>{record.createdAt}</time></article>)}</div>}
-        </div>
+        {evidenceLog[0] && <div className="evidence-success" aria-live="polite"><span>✓</span><div><strong>Added to your GEIS</strong><p>{evidenceLog[0].fileName} · {evidenceLog[0].previousScore} → {evidenceLog[0].appliedScore}</p></div><b>GEIS {metrics.geis.toFixed(1)}</b></div>}
       </section>
 
       <section className="lab-section" id="lab">
