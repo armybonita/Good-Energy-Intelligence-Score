@@ -1,65 +1,64 @@
-# BODY Q™ — The Intelligence of Your Body
+# Good Energy Intelligence Score (GEIS)
 
-Public research prototype connecting the BODY Q™ experience, the My Body IQ™
-personal-health intelligence architecture, and the Good Energy Intelligence
-Score™ (GEIS).
+Public bilingual research implementation of the BODY Q™ Good Energy Intelligence Score engine.
 
-## Brand and product hierarchy
-
-1. **BODY Q™** — the user-facing experience: body state, explanation and one
-   actionable lever.
-2. **My Body IQ™** — the broader intelligence architecture: Good Energy,
-   Metabolic, Recovery and Longevity IQ.
-3. **GEIS** — the core energy engine using five weighted domains and a balance
-   penalty.
-
-## Public homepage experience
-
-- Interactive Body State Dial
-- Live GEIS laboratory with adjustable five-domain inputs
-- Health checkup, genome, meal-photo and wearable file selection
-- GLP-1 personalization mode
-- Measure → Explain → Act → Learn loop
-- Browser-first privacy and responsible-use boundaries
-- Responsive navy–cyan precision-health design
-
-The public file selectors record only the selected filename in browser memory.
-They do not upload, parse or persist health data.
-
-## GEIS algorithm v1
+GEIS combines five health domains with an explicit cross-domain imbalance penalty:
 
 ```text
-Weighted Base Score
-  = 0.25 × Biomarkers
-  + 0.20 × Nutrition
-  + 0.20 × Exercise
-  + 0.20 × Mind
-  + 0.15 × Sleep
-
-Final GEIS
-  = Weighted Base Score − 0.15 × Population Standard Deviation
+GEIS = 0.25 × Biomarkers
+     + 0.20 × Nutrition
+     + 0.20 × Exercise
+     + 0.20 × Mind
+     + 0.15 × Sleep
+     − 0.15 × SD(five domains)
 ```
 
-Configuration is versioned in
-[`algorithm/config.ts`](algorithm/config.ts). Full assumptions and updating
-instructions are in [`docs/ALGORITHM.md`](docs/ALGORITHM.md).
+## Live public sites
 
-Genomic context may support personalization and confidence. It is not directly
-added to or subtracted from the GEIS total.
+- English: https://body-q-geis-engine.army78.chatgpt.site
+- 한국어: https://body-q-geis-engine-kr.army78.chatgpt.site
 
-## Run locally
+The two sites link to each other through their EN / 한국어 language controls.
 
-Prerequisite: Node.js 22 or later.
+## Repository structure
+
+```text
+.
+├── english/   # English public site
+└── korean/    # Korean public site
+```
+
+Each application includes:
+
+- an interactive five-domain GEIS calculator;
+- an imbalance-penalty visualization;
+- a pre-clinical transition-state simulator;
+- an explainable Next Best Action generator;
+- technical architecture and API documentation;
+- wearable integration for Galaxy Watch/Ring, Apple Watch, CGM, and BLE sensors;
+- adaptive 1-, 5-, and 15-minute sampling controls with the `/v1/devices/sampling-control` endpoint design.
+
+## Local development
+
+Node.js 22.13 or later is required.
 
 ```bash
-npm install
-npm run check
+cd english   # or: cd korean
+npm ci
 npm run dev
 ```
 
-## Research boundary
+Build and test:
 
-BODY Q™ is for health and lifestyle support research. It is not a medical
-diagnosis, prescription or clinically validated medical score.
+```bash
+npm run build
+npm test
+```
 
-Copyright © 2026 Ahreum Hong. All rights reserved. See [`NOTICE`](NOTICE).
+The checked-in `.openai/hosting.json` files intentionally omit live Sites project identifiers. The Sites publishing workflow assigns the correct project identity at deployment time.
+
+## Research and medical notice
+
+This repository is a research and collaboration prototype. It is not a medical device, does not diagnose or treat disease, and must not replace professional medical judgment. Production use with health or wearable data requires appropriate consent, security, privacy, clinical validation, and regulatory review.
+
+Patent rights may apply to the GEIS scoring, transition-state estimation, causal intervention guidance, and orchestration concepts described by this project. Publication of source code does not itself grant a patent license.
