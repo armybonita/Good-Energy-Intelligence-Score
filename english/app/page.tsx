@@ -1,10 +1,18 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 
 type DomainKey = "biomarkers" | "nutrition" | "exercise" | "mind" | "sleep";
 type DeviceKey = "samsung" | "apple" | "cgm" | "ble";
-type EndpointKey = "calculate" | "simulate" | "recommend" | "device";
+type EndpointKey = "ingest" | "calculate" | "simulate" | "recommend" | "device";
+type EvidenceKind = "meal" | "checkup" | "exercise";
+
+type EvidenceFile = { name: string; type: string; size: number; preview?: string };
+type EvidenceRecord = {
+  id: string; kind: EvidenceKind; label: string; fileName: string; domain: DomainKey;
+  reviewedScore: number; previousScore: number; appliedScore: number; note: string; createdAt: string;
+};
 
 const domains: Array<{
   key: DomainKey;
@@ -40,6 +48,12 @@ const deviceSources: Array<{ key: DeviceKey; name: string; signals: string; prot
   { key: "apple", name: "Apple Watch", signals: "HRV · heart rate · activity", protocol: "HealthKit" },
   { key: "cgm", name: "Continuous Glucose Monitor", signals: "glucose · variability · meal response", protocol: "Vendor API" },
   { key: "ble", name: "Research BLE Sensor", signals: "heart rate · temperature · motion", protocol: "BLE GATT" },
+];
+
+const evidenceTypes: Array<{ key: EvidenceKind; label: string; eyebrow: string; description: string; domain: DomainKey; accept: string }> = [
+  { key: "meal", label: "Meal photo", eyebrow: "NUTRITION", description: "Upload a meal image, review its balance and apply it to the Nutrition domain.", domain: "nutrition", accept: "image/*" },
+  { key: "checkup", label: "Health checkup", eyebrow: "BIOMARKERS", description: "Add a checkup image, PDF or table and confirm the reviewed Biomarkers score.", domain: "biomarkers", accept: "image/*,.pdf,.csv,.txt" },
+  { key: "exercise", label: "Exercise record", eyebrow: "EXERCISE", description: "Upload a treadmill, running or activity record and reflect today’s session.", domain: "exercise", accept: "image/*,.pdf,.csv,.txt" },
 ];
 
 const actionLibrary: Record<DomainKey, { action: string; reason: string; metric: string }> = {
@@ -87,6 +101,11 @@ export default function Home() {
   const [confidence, setConfidence] = useState(82);
   const [endpoint, setEndpoint] = useState<EndpointKey>("calculate");
   const [copied, setCopied] = useState(false);
+  const [evidenceKind, setEvidenceKind] = useState<EvidenceKind>("exercise");
+  const [evidenceFile, setEvidenceFile] = useState<EvidenceFile | null>(null);
+  const [evidenceScore, setEvidenceScore] = useState(78);
+  const [evidenceNote, setEvidenceNote] = useState("");
+  const [evidenceLog, setEvidenceLog] = useState<EvidenceRecord[]>([]);
   const [connectedDevices, setConnectedDevices] = useState<Record<DeviceKey, boolean>>({
     samsung: true,
     apple: false,
@@ -157,10 +176,18 @@ export default function Home() {
 
   const recommendedCadence = metrics.transitionRisk >= 60 ? 1 : metrics.transitionRisk >= 35 ? 5 : 15;
   const activeDevices = deviceSources.filter((device) => connectedDevices[device.key]);
+  const activeEvidenceType = evidenceTypes.find((item) => item.key === evidenceKind) ?? evidenceTypes[0];
+  const projectedEvidenceScore = Math.round(scores[activeEvidenceType.domain] * 0.65 + evidenceScore * 0.35);
 
   const apiExamples = useMemo(() => {
     const domainScores = Object.fromEntries(domains.map((domain) => [domain.key, scores[domain.key]]));
     return {
+      ingest: {
+        method: "POST",
+        path: "/v1/evidence/ingest",
+        request: { subject_id: "research-subject-042", evidence_type: evidenceKind, file_name: evidenceFile?.name ?? "treadmill-session.jpg", review: { target_domain: activeEvidenceType.domain, reviewed_score: evidenceScore, note: evidenceNote || "Participant-confirmed evidence" } },
+        response: { status: "review_confirmed", provenance_retained: true, projected_domain_score: projectedEvidenceScore, geis_recalculation: "queued" },
+      },
       calculate: {
         method: "POST",
         path: "/v1/geis/calculate",
@@ -220,7 +247,7 @@ export default function Home() {
         },
       },
     };
-  }, [scores, lambda, metrics, confidence, perturbation, recovery, nextAction, activeDevices, recommendedCadence]);
+  }, [scores, lambda, metrics, confidence, perturbation, recovery, nextAction, activeDevices, recommendedCadence, evidenceKind, evidenceFile, evidenceScore, evidenceNote, activeEvidenceType.domain, projectedEvidenceScore]);
 
   const activeApi = apiExamples[endpoint];
   const apiText = `${activeApi.method} ${activeApi.path}\n\nREQUEST\n${JSON.stringify(activeApi.request, null, 2)}\n\nRESPONSE\n${JSON.stringify(activeApi.response, null, 2)}`;
@@ -232,6 +259,37 @@ export default function Home() {
 
   const setDomainScore = (key: DomainKey, value: number) => {
     setScores((current) => ({ ...current, [key]: clamp(value) }));
+  };
+
+  const selectEvidenceKind = (kind: EvidenceKind) => {
+    setEvidenceKind(kind); setEvidenceFile(null);
+    setEvidenceScore(kind === "exercise" ? 82 : kind === "meal" ? 74 : 72); setEvidenceNote("");
+  };
+
+  const handleEvidenceFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; if (!file) return;
+    const setFile = (preview?: string) => setEvidenceFile({ name: file.name, type: file.type || "unknown", size: file.size, preview });
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => setFile(typeof reader.result === "string" ? reader.result : undefined);
+      reader.readAsDataURL(file);
+    } else setFile();
+  };
+
+  const applyEvidence = () => {
+    if (!evidenceFile) return;
+    const domain = activeEvidenceType.domain; const previousScore = scores[domain];
+    const appliedScore = Math.round(previousScore * 0.65 + evidenceScore * 0.35);
+    const record: EvidenceRecord = {
+      id: `${Date.now()}-${evidenceKind}`, kind: evidenceKind, label: activeEvidenceType.label,
+      fileName: evidenceFile.name, domain, reviewedScore: evidenceScore, previousScore, appliedScore,
+      note: evidenceNote.trim() || "Participant-confirmed evidence",
+      createdAt: new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }),
+    };
+    setScores((current) => ({ ...current, [domain]: appliedScore }));
+    setConfidence((current) => Math.min(98, current + 4));
+    setEvidenceLog((current) => [record, ...current].slice(0, 6));
+    setEvidenceFile(null); setEvidenceNote("");
   };
 
   const copyApi = async () => {
@@ -256,7 +314,7 @@ export default function Home() {
     const snapshot = {
       generated_at: new Date().toISOString(),
       research_use_only: true,
-      inputs: { scores, lambda, perturbation, recovery, confidence },
+      inputs: { scores, lambda, perturbation, recovery, confidence, evidence: evidenceLog },
       outputs: {
         geis: Number(metrics.geis.toFixed(2)),
         weighted_base: Number(metrics.weightedBase.toFixed(2)),
@@ -284,6 +342,7 @@ export default function Home() {
         </a>
         <nav aria-label="Primary navigation">
           <a href="#method">Method</a>
+          <a href="#evidence">My Data</a>
           <a href="#lab">GEIS Lab</a>
           <a href="#transition">Transition</a>
           <a href="#devices">Wearables</a>
@@ -367,9 +426,44 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="evidence-section" id="evidence">
+        <div className="section-heading">
+          <span>02 / PERSONAL MULTIMODAL INPUT</span>
+          <h2>Upload today’s evidence. See it change the model.</h2>
+          <p>Add a meal photo, health-check record or treadmill screenshot. Review the interpreted domain value before it is blended into GEIS.</p>
+        </div>
+        <div className="evidence-type-row" role="tablist" aria-label="Evidence type">
+          {evidenceTypes.map((item) => <button key={item.key} role="tab" aria-selected={evidenceKind === item.key} onClick={() => selectEvidenceKind(item.key)}><span>{item.eyebrow}</span><strong>{item.label}</strong></button>)}
+        </div>
+        <div className="evidence-workspace">
+          <div className="upload-card">
+            <div className="upload-card-head"><div><span>STEP 1</span><h3>Select your file</h3></div><b>Local preview</b></div>
+            <label className={evidenceFile ? "drop-zone has-file" : "drop-zone"}>
+              <input type="file" accept={activeEvidenceType.accept} onChange={handleEvidenceFile} />
+              {evidenceFile?.preview ? <Image src={evidenceFile.preview} alt={`Preview of ${evidenceFile.name}`} width={72} height={72} unoptimized /> : <div className="upload-symbol">＋</div>}
+              <div><strong>{evidenceFile?.name ?? `Upload ${activeEvidenceType.label.toLowerCase()}`}</strong><p>{evidenceFile ? `${(evidenceFile.size / 1024).toFixed(1)} KB · ${evidenceFile.type}` : activeEvidenceType.description}</p></div>
+              <span className="browse-pill">Choose file</span>
+            </label>
+            <p className="privacy-line">The file stays in this browser session. It is not saved to the public site or sent for medical diagnosis.</p>
+          </div>
+          <div className="review-card">
+            <div className="upload-card-head"><div><span>STEP 2</span><h3>Review before applying</h3></div><b>{activeEvidenceType.eyebrow}</b></div>
+            <div className="review-score"><div><label htmlFor="evidence-score">Confirmed evidence score</label><p>Set the 0–100 value after reviewing the uploaded record.</p></div><output htmlFor="evidence-score">{evidenceScore}</output></div>
+            <input id="evidence-score" type="range" min="0" max="100" value={evidenceScore} onChange={(event) => setEvidenceScore(Number(event.target.value))} />
+            <label className="evidence-note"><span>Optional note</span><textarea value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder={evidenceKind === "exercise" ? "e.g. Treadmill 42 min, 5.1 km, moderate effort" : evidenceKind === "meal" ? "e.g. Protein, vegetables and whole grains" : "e.g. Reviewed with the latest annual checkup"} /></label>
+            <div className="impact-preview"><div><span>Current {activeEvidenceType.eyebrow}</span><b>{scores[activeEvidenceType.domain]}</b></div><i>→</i><div><span>After evidence</span><b>{projectedEvidenceScore}</b></div></div>
+            <button className="apply-evidence" disabled={!evidenceFile} onClick={applyEvidence}>Apply to GEIS and recalculate</button>
+          </div>
+        </div>
+        <div className="evidence-log" aria-live="polite">
+          <div className="evidence-log-head"><div><span>STEP 3</span><h3>Evidence reflected in the engine</h3></div><b>{evidenceLog.length} applied</b></div>
+          {evidenceLog.length === 0 ? <div className="empty-evidence">No personal evidence has been applied yet. Upload today’s treadmill record to start.</div> : <div className="evidence-records">{evidenceLog.map((record) => <article key={record.id}><span>{record.label}</span><div><strong>{record.fileName}</strong><p>{record.note}</p></div><div className="record-change"><small>{record.previousScore}</small><i>→</i><b>{record.appliedScore}</b></div><time>{record.createdAt}</time></article>)}</div>}
+        </div>
+      </section>
+
       <section className="lab-section" id="lab">
         <div className="section-heading">
-          <span>02 / INTERACTIVE GEIS LAB</span>
+          <span>03 / INTERACTIVE GEIS LAB</span>
           <h2>Move the system. See what the average misses.</h2>
           <p>Adjust each domain or load a research profile. Every output updates immediately.</p>
         </div>
@@ -474,7 +568,7 @@ export default function Home() {
 
       <section className="transition-section" id="transition">
         <div className="section-heading light-heading">
-          <span>03 / TRANSITION-STATE SIMULATOR</span>
+          <span>04 / TRANSITION-STATE SIMULATOR</span>
           <h2>From a static score to recovery dynamics.</h2>
           <p>Stress the current system, vary its recovery capacity and observe the seven-day trajectory.</p>
         </div>
@@ -529,7 +623,7 @@ export default function Home() {
 
       <section className="device-section" id="devices">
         <div className="section-heading">
-          <span>04 / WEARABLE DEVICE BRIDGE</span>
+          <span>05 / WEARABLE DEVICE BRIDGE</span>
           <h2>Turn continuous signals into adaptive measurement.</h2>
           <p>Connect research-grade signal sources, retain device provenance and change sampling cadence when the transition model needs more information.</p>
         </div>
@@ -568,7 +662,7 @@ export default function Home() {
       </section>
 
       <section className="action-section">
-        <div className="action-number">05</div>
+        <div className="action-number">06</div>
         <div className="action-content">
           <span>NEXT BEST ACTION</span>
           <h2>One move. Clear rationale. Measurable follow-up.</h2>
@@ -587,7 +681,7 @@ export default function Home() {
 
       <section className="architecture-section" id="architecture">
         <div className="section-heading">
-          <span>06 / TECHNICAL ARCHITECTURE</span>
+          <span>07 / TECHNICAL ARCHITECTURE</span>
           <h2>Built as a traceable research pipeline.</h2>
           <p>Each layer keeps provenance, uncertainty and version information available for validation.</p>
         </div>
@@ -614,7 +708,7 @@ export default function Home() {
 
       <section className="api-section" id="api">
         <div className="api-intro">
-          <span>07 / RESEARCH API</span>
+          <span>08 / RESEARCH API</span>
           <h2>Take the current model into a study workflow.</h2>
           <p>The interface below mirrors the live values in this page, making the engine logic easy to inspect and discuss with collaborators.</p>
           <div className="api-notes"><span>JSON over HTTPS</span><span>Versioned models</span><span>Subject-pseudonymous</span></div>
@@ -622,6 +716,7 @@ export default function Home() {
         <div className="api-console">
           <div className="api-tabs" role="tablist" aria-label="API examples">
             {([
+              ["ingest", "Ingest evidence"],
               ["calculate", "Calculate GEIS"],
               ["simulate", "Simulate transition"],
               ["recommend", "Recommend action"],
