@@ -1,10 +1,14 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 
 type DomainKey = "biomarkers" | "nutrition" | "exercise" | "mind" | "sleep";
 type DeviceKey = "samsung" | "apple" | "cgm" | "ble";
-type EndpointKey = "calculate" | "simulate" | "recommend" | "device";
+type EndpointKey = "ingest" | "calculate" | "simulate" | "recommend" | "device";
+type EvidenceKind = "meal" | "checkup" | "exercise";
+type EvidenceFile = { name: string; type: string; size: number; preview?: string };
+type EvidenceRecord = { id: string; kind: EvidenceKind; label: string; fileName: string; domain: DomainKey; reviewedScore: number; previousScore: number; appliedScore: number; note: string; createdAt: string };
 
 const domains: Array<{
   key: DomainKey;
@@ -40,6 +44,12 @@ const deviceSources: Array<{ key: DeviceKey; name: string; signals: string; prot
   { key: "apple", name: "애플 워치", signals: "HRV · 심박수 · 활동", protocol: "HealthKit" },
   { key: "cgm", name: "연속혈당측정기", signals: "혈당 · 변동성 · 식사반응", protocol: "Vendor API" },
   { key: "ble", name: "연구용 BLE 센서", signals: "심박수 · 체온 · 움직임", protocol: "BLE GATT" },
+];
+
+const evidenceTypes: Array<{ key: EvidenceKind; label: string; eyebrow: string; description: string; domain: DomainKey; accept: string }> = [
+  { key: "meal", label: "식사 사진", eyebrow: "영양", description: "식사 사진을 올리고 식사의 균형을 확인한 뒤 영양 영역에 반영합니다.", domain: "nutrition", accept: "image/*" },
+  { key: "checkup", label: "건강검진표", eyebrow: "생체지표", description: "건강검진 이미지·PDF·표를 추가하고 검토한 생체지표 점수를 확정합니다.", domain: "biomarkers", accept: "image/*,.pdf,.csv,.txt" },
+  { key: "exercise", label: "운동 기록", eyebrow: "운동", description: "러닝머신·러닝·활동 기록 사진을 올리고 오늘의 운동을 반영합니다.", domain: "exercise", accept: "image/*,.pdf,.csv,.txt" },
 ];
 
 const actionLibrary: Record<DomainKey, { action: string; reason: string; metric: string }> = {
@@ -87,6 +97,11 @@ export default function Home() {
   const [confidence, setConfidence] = useState(82);
   const [endpoint, setEndpoint] = useState<EndpointKey>("calculate");
   const [copied, setCopied] = useState(false);
+  const [evidenceKind, setEvidenceKind] = useState<EvidenceKind>("exercise");
+  const [evidenceFile, setEvidenceFile] = useState<EvidenceFile | null>(null);
+  const [evidenceScore, setEvidenceScore] = useState(78);
+  const [evidenceNote, setEvidenceNote] = useState("");
+  const [evidenceLog, setEvidenceLog] = useState<EvidenceRecord[]>([]);
   const [connectedDevices, setConnectedDevices] = useState<Record<DeviceKey, boolean>>({
     samsung: true,
     apple: false,
@@ -159,10 +174,17 @@ export default function Home() {
     metrics.state === "Transition candidate" ? "전환 후보" : metrics.state === "Watch" ? "주의" : "안정";
   const recommendedCadence = metrics.transitionRisk >= 60 ? 1 : metrics.transitionRisk >= 35 ? 5 : 15;
   const activeDevices = deviceSources.filter((device) => connectedDevices[device.key]);
+  const activeEvidenceType = evidenceTypes.find((item) => item.key === evidenceKind) ?? evidenceTypes[0];
+  const projectedEvidenceScore = Math.round(scores[activeEvidenceType.domain] * 0.65 + evidenceScore * 0.35);
 
   const apiExamples = useMemo(() => {
     const domainScores = Object.fromEntries(domains.map((domain) => [domain.key, scores[domain.key]]));
     return {
+      ingest: {
+        method: "POST", path: "/v1/evidence/ingest",
+        request: { subject_id: "research-subject-042", evidence_type: evidenceKind, file_name: evidenceFile?.name ?? "treadmill-session.jpg", review: { target_domain: activeEvidenceType.domain, reviewed_score: evidenceScore, note: evidenceNote || "사용자가 확인한 근거자료" } },
+        response: { status: "review_confirmed", provenance_retained: true, projected_domain_score: projectedEvidenceScore, geis_recalculation: "queued" },
+      },
       calculate: {
         method: "POST",
         path: "/v1/geis/calculate",
@@ -222,7 +244,7 @@ export default function Home() {
         },
       },
     };
-  }, [scores, lambda, metrics, confidence, perturbation, recovery, nextAction, activeDevices, recommendedCadence]);
+  }, [scores, lambda, metrics, confidence, perturbation, recovery, nextAction, activeDevices, recommendedCadence, evidenceKind, evidenceFile, evidenceScore, evidenceNote, activeEvidenceType.domain, projectedEvidenceScore]);
 
   const activeApi = apiExamples[endpoint];
   const apiText = `${activeApi.method} ${activeApi.path}\n\n요청\n${JSON.stringify(activeApi.request, null, 2)}\n\n응답\n${JSON.stringify(activeApi.response, null, 2)}`;
@@ -234,6 +256,19 @@ export default function Home() {
 
   const setDomainScore = (key: DomainKey, value: number) => {
     setScores((current) => ({ ...current, [key]: clamp(value) }));
+  };
+
+  const selectEvidenceKind = (kind: EvidenceKind) => { setEvidenceKind(kind); setEvidenceFile(null); setEvidenceScore(kind === "exercise" ? 82 : kind === "meal" ? 74 : 72); setEvidenceNote(""); };
+  const handleEvidenceFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; if (!file) return;
+    const setFile = (preview?: string) => setEvidenceFile({ name: file.name, type: file.type || "unknown", size: file.size, preview });
+    if (file.type.startsWith("image/")) { const reader = new FileReader(); reader.onload = () => setFile(typeof reader.result === "string" ? reader.result : undefined); reader.readAsDataURL(file); } else setFile();
+  };
+  const applyEvidence = () => {
+    if (!evidenceFile) return;
+    const domain = activeEvidenceType.domain; const previousScore = scores[domain]; const appliedScore = Math.round(previousScore * 0.65 + evidenceScore * 0.35);
+    const record: EvidenceRecord = { id: `${Date.now()}-${evidenceKind}`, kind: evidenceKind, label: activeEvidenceType.label, fileName: evidenceFile.name, domain, reviewedScore: evidenceScore, previousScore, appliedScore, note: evidenceNote.trim() || "사용자가 확인한 근거자료", createdAt: new Date().toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" }) };
+    setScores((current) => ({ ...current, [domain]: appliedScore })); setConfidence((current) => Math.min(98, current + 4)); setEvidenceLog((current) => [record, ...current].slice(0, 6)); setEvidenceFile(null); setEvidenceNote("");
   };
 
   const copyApi = async () => {
@@ -258,7 +293,7 @@ export default function Home() {
     const snapshot = {
       generated_at: new Date().toISOString(),
       research_use_only: true,
-      inputs: { scores, lambda, perturbation, recovery, confidence },
+      inputs: { scores, lambda, perturbation, recovery, confidence, evidence: evidenceLog },
       outputs: {
         geis: Number(metrics.geis.toFixed(2)),
         weighted_base: Number(metrics.weightedBase.toFixed(2)),
@@ -286,6 +321,7 @@ export default function Home() {
         </a>
         <nav aria-label="주요 메뉴">
           <a href="#method">산출방법</a>
+          <a href="#evidence">내 데이터</a>
           <a href="#lab">GEIS 랩</a>
           <a href="#transition">전환상태</a>
           <a href="#devices">웨어러블</a>
@@ -369,9 +405,19 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="evidence-section" id="evidence">
+        <div className="section-heading"><span>02 / 개인 다중모달 데이터 입력</span><h2>오늘의 자료를 올리면 GEIS가 달라집니다.</h2><p>식사 사진·건강검진표·러닝머신 기록 사진을 올리세요. 해석된 영역값을 직접 확인한 뒤 GEIS에 반영할 수 있습니다.</p></div>
+        <div className="evidence-type-row" role="tablist" aria-label="자료 유형">{evidenceTypes.map((item) => <button key={item.key} role="tab" aria-selected={evidenceKind === item.key} onClick={() => selectEvidenceKind(item.key)}><span>{item.eyebrow}</span><strong>{item.label}</strong></button>)}</div>
+        <div className="evidence-workspace">
+          <div className="upload-card"><div className="upload-card-head"><div><span>1단계</span><h3>파일 선택</h3></div><b>로컬 미리보기</b></div><label className={evidenceFile ? "drop-zone has-file" : "drop-zone"}><input type="file" accept={activeEvidenceType.accept} onChange={handleEvidenceFile} />{evidenceFile?.preview ? <Image src={evidenceFile.preview} alt={`${evidenceFile.name} 미리보기`} width={72} height={72} unoptimized /> : <div className="upload-symbol">＋</div>}<div><strong>{evidenceFile?.name ?? `${activeEvidenceType.label} 업로드`}</strong><p>{evidenceFile ? `${(evidenceFile.size / 1024).toFixed(1)} KB · ${evidenceFile.type}` : activeEvidenceType.description}</p></div><span className="browse-pill">파일 선택</span></label><p className="privacy-line">파일은 현재 브라우저 세션에서만 사용됩니다. 공개 사이트에 저장되거나 의료 진단을 위해 전송되지 않습니다.</p></div>
+          <div className="review-card"><div className="upload-card-head"><div><span>2단계</span><h3>반영 전 확인</h3></div><b>{activeEvidenceType.eyebrow}</b></div><div className="review-score"><div><label htmlFor="evidence-score">확인된 근거 점수</label><p>업로드한 자료를 확인한 뒤 0–100 값을 설정하세요.</p></div><output htmlFor="evidence-score">{evidenceScore}</output></div><input id="evidence-score" type="range" min="0" max="100" value={evidenceScore} onChange={(event) => setEvidenceScore(Number(event.target.value))} /><label className="evidence-note"><span>선택 메모</span><textarea value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder={evidenceKind === "exercise" ? "예: 러닝머신 42분, 5.1km, 중강도" : evidenceKind === "meal" ? "예: 단백질·채소·통곡물 식사" : "예: 최근 정기 건강검진 결과 확인"} /></label><div className="impact-preview"><div><span>현재 {activeEvidenceType.eyebrow}</span><b>{scores[activeEvidenceType.domain]}</b></div><i>→</i><div><span>자료 반영 후</span><b>{projectedEvidenceScore}</b></div></div><button className="apply-evidence" disabled={!evidenceFile} onClick={applyEvidence}>GEIS에 반영하고 다시 계산</button></div>
+        </div>
+        <div className="evidence-log" aria-live="polite"><div className="evidence-log-head"><div><span>3단계</span><h3>엔진에 반영된 근거자료</h3></div><b>{evidenceLog.length}건 반영</b></div>{evidenceLog.length === 0 ? <div className="empty-evidence">아직 반영된 개인 자료가 없습니다. 오늘의 러닝머신 기록부터 올려보세요.</div> : <div className="evidence-records">{evidenceLog.map((record) => <article key={record.id}><span>{record.label}</span><div><strong>{record.fileName}</strong><p>{record.note}</p></div><div className="record-change"><small>{record.previousScore}</small><i>→</i><b>{record.appliedScore}</b></div><time>{record.createdAt}</time></article>)}</div>}</div>
+      </section>
+
       <section className="lab-section" id="lab">
         <div className="section-heading">
-          <span>02 / 인터랙티브 GEIS 랩</span>
+          <span>03 / 인터랙티브 GEIS 랩</span>
           <h2>값을 움직이면 평균이 놓친 것이 보입니다.</h2>
           <p>각 영역을 조정하거나 연구 프로필을 불러오세요. 모든 결과가 즉시 갱신됩니다.</p>
         </div>
@@ -476,7 +522,7 @@ export default function Home() {
 
       <section className="transition-section" id="transition">
         <div className="section-heading light-heading">
-          <span>03 / 전환상태 시뮬레이터</span>
+          <span>04 / 전환상태 시뮬레이터</span>
           <h2>정적인 점수에서 회복동역학으로.</h2>
           <p>현재 시스템에 교란을 가하고 회복역량을 바꾸면서 7일간의 궤적을 관찰하세요.</p>
         </div>
@@ -531,7 +577,7 @@ export default function Home() {
 
       <section className="device-section" id="devices">
         <div className="section-heading">
-          <span>04 / 웨어러블 디바이스 브리지</span>
+          <span>05 / 웨어러블 디바이스 브리지</span>
           <h2>연속신호를 적응형 측정으로 연결합니다.</h2>
           <p>연구용 신호장비의 출처정보를 보존하고, 전환모델에 더 많은 정보가 필요할 때 샘플링 주기를 조정합니다.</p>
         </div>
@@ -570,7 +616,7 @@ export default function Home() {
       </section>
 
       <section className="action-section">
-        <div className="action-number">05</div>
+        <div className="action-number">06</div>
         <div className="action-content">
           <span>최적의 다음 행동</span>
           <h2>단 하나의 행동. 명확한 근거. 측정 가능한 후속관찰.</h2>
@@ -589,7 +635,7 @@ export default function Home() {
 
       <section className="architecture-section" id="architecture">
         <div className="section-heading">
-          <span>06 / 기술 아키텍처</span>
+          <span>07 / 기술 아키텍처</span>
           <h2>추적 가능한 연구 파이프라인으로 설계했습니다.</h2>
           <p>각 계층은 검증에 필요한 출처·불확실성·버전 정보를 보존합니다.</p>
         </div>
@@ -616,7 +662,7 @@ export default function Home() {
 
       <section className="api-section" id="api">
         <div className="api-intro">
-          <span>07 / 연구 API</span>
+          <span>08 / 연구 API</span>
           <h2>현재 모델을 실제 연구 흐름으로 연결합니다.</h2>
           <p>아래 인터페이스는 페이지의 실시간 값을 반영하여 협력연구자가 엔진의 논리를 쉽게 검토하고 논의할 수 있게 합니다.</p>
           <div className="api-notes"><span>HTTPS 기반 JSON</span><span>모델 버전관리</span><span>대상자 가명처리</span></div>
@@ -624,6 +670,7 @@ export default function Home() {
         <div className="api-console">
           <div className="api-tabs" role="tablist" aria-label="API 예시">
             {([
+              ["ingest", "근거자료 입력"],
               ["calculate", "GEIS 계산"],
               ["simulate", "전환상태 시뮬레이션"],
               ["recommend", "행동 추천"],
